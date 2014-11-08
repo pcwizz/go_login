@@ -1,21 +1,46 @@
 package go_login
 
 import (
-	"database/sql",
-	"github.com/go-sql-driver/mysql"
+	//"database/sql",
+	//"github.com/go-sql-driver/mysql"
 	"time"
 )
-
 
 // Email address
 
 //They can be active or in active not just strings
 type email struct {
-	email string
+	Email string
 	Active bool
 }
 //A user may have more than one
 type emails []email;
+func activeEmails_h(es emails) emails{
+	output := make(emails,0, len(es))
+	for i := range es {
+		if (es[i].Active){
+			output = append(output, es[i])
+		}
+	}
+	return output
+}
+//We only care about active emails most of the time
+func activeEmails(es emails)(emails){
+	length := len(es)
+	switch length{
+		case 0:
+			return nil
+		case 1:
+			if es[0].Active {
+				return es
+			} else {
+				return nil	
+			}
+		default:
+			return activeEmails_h(es)
+	}
+}
+
 
 //Passwords
 //We need to know which cryptographic hashing algorithm we used,
@@ -34,7 +59,7 @@ type password struct {
 //We could just use an enum, but then we would have to change this 
 //for just about every application we write using it; I'm lazy.
 type permission struct {
-	Id const int
+	Id int 
 	Description string
 }
 
@@ -59,12 +84,12 @@ type groups []group
 //the db for a clear audit trail.
 type token struct {
 	Token string
-	Expires Time
+	Expires time.Time
 }
 
 //Users
 type user struct {
-	Id const int
+	Id int
 	Username string
 	Password password
 	Active bool
