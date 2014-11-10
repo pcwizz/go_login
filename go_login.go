@@ -12,6 +12,7 @@ import (
 type email struct {
 	Email string
 	Active bool
+	User *user //Doubling up the links for ease of use.
 }
 //A user may have more than one
 type emails []email;
@@ -102,4 +103,19 @@ type session struct {
 	User *user
 	Token token
 }
+
+type sessions []session
+
+
+//Login attempts
+//Keeping track of failed logins so attacks can be mitigated
+
+type attempt struct {
+	Host string
+	Time time.Time
+	Email email //Who did they try to log in ass, do they even exist
+} 
+
+//We will want to keep a time based buffer of these
+
 
