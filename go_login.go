@@ -24,8 +24,14 @@ func Init(connectString string){
 	//Set up tables
 	_, err = database.Exec("create table if not exist users " +
 		"(id unsigned integer primary key auto_increment," +
-		" name text not null, email text not null," +
-		" password text, salt text, hash text)")
+		" name text not null, email text not null")
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = database.Exec("create table if not exist passwords " +
+		"(userID unsigned integer not null, " + 
+		"password text not null, salt text not null, " + 
+		"hash text not null)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -48,7 +54,7 @@ type Password struct {
 }
 
 func Authenticate(id uint, password string) bool {
-	pswdstmt, err := database.Prepare("select password, salt, hash, id from users where id = ?")
+	pswdstmt, err := database.Prepare("select password, salt, hash from passwords where userID = ?")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -150,18 +156,35 @@ func UpdatePassword (id uint, password string) {
 		log.Fatal(err)
 	}
 	//Update the password in the database
-	stmt, err := database.Prepare("update users set password = ?, salt = ?, hash = ? where id = ?")
+	stmt, err := database.Prepare("update passwords set password = ?, salt = ?, hash = ? where userID = ?")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer stmt.Close()
-	if _, err := stmt.Exec(hashedpswd, string(salt), "bcrypt20", id); err != nil {
+	res, err := stmt.Exec(hashedpswd, string(salt), "bcrypt20", id) 
+	if err != nil {
 		log.Fatal(err)
+	}
+	aff, err := res.RowsAffected() 
+	if err != nil {
+		log.Fatal(err)
+	}
+	if aff == 0 {
+		//Insert the password
+		stmt, err := database.Prepare("insert into passwords(userID, password, salt, hash) values (?,?,?,?)")
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer stmt.Close()
+		_, err = stmt.Exec(id, hashedpswd, string(salt), "bcrypt20")
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
 func CreateUser (user User, password string) uint {
-	stmt, err := database.Prepare("insert into users (name, email) values (?, ?)")//Going to use update password
+	stmt, err := database.Prepare("insert into users (name, email) values (?, ?)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -235,5 +258,20 @@ func Login (email string, password string) Token {
 		return IssueToken(id, 60*60*2)//Give a 2 hour token
 	}
 	var token Token
+	return token
+}
+//Todo: Implement client certificate authentication (x509)
+func Logout (token Token) Token {
+	token.Expiry = time.Now().Unix()
+	//Update database
+	stmt, err := database.Prepare("update tokens set expiry=? where id=? and token=?")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(token.Expiry, token.Id, token.Token)
+	if err != nil {
+		log.Fatal(err)
+	}
 	return token
 }
