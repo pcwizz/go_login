@@ -45,8 +45,7 @@ func Init(connectString string){
 	}
 	_, err = database.Exec("create table if not exist passwords " +
 		"(userID unsigned integer not null, " + 
-		"password text not null, salt text not null, " + 
-		"hash text not null)")
+		"password text not null)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -62,39 +61,29 @@ func Uninit(){
 	database.Close()
 }
 
-type Password struct {
-	Password string//The hashed password
-	Salt string//The pseudo-random string used to mitigate dictionary attacks
-	Hash string//The cryptographic hashing algorithm used
-}
 
 func Authenticate(id uint, password string) bool {
-	pswdstmt, err := database.Prepare("select password, salt, hash from passwords where userID = ?")
+	pswdstmt, err := database.Prepare("select password from passwords where userID = ?")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer pswdstmt.Close()
-	var pswd Password
-	err = pswdstmt.QueryRow(id).Scan(&pswd.Password, &pswd.Salt, &pswd.Hash)
+	var pswd string
+	err = pswdstmt.QueryRow(id).Scan(&pswd)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false//doesn't exist.
 		}
 		log.Fatal(err)
 	}
-	var pswdInput []byte
-	switch pswd.Hash {
-		case "bcrypt20"://bcrypt with a cost of 20
-			pswdInput, err = bcrypt.GenerateFromPassword([]byte(password + pswd.Salt), 20)
-			if err != nil {
-				log.Fatal(err)
-			}
-		default:
-			log.Println("Didn't recognize hash")
+	err = bcrypt.CompareHashAndPassword([]byte(pswd), []byte(password))	
+	switch err {
+		case nil:
+			return true
+		case bcrypt.ErrMismatchedHashAndPassword:
 			return false
-	}
-	if pswd.Password == string(pswdInput) {
-		return true
+		default:
+			log.Fatal(err)
 	}
 	return false
 }
@@ -157,26 +146,18 @@ func UpdatePassword (id uint, password string) {
 	if id == 0 {
 		return
 	}
-	//Make a salt
-	salt := make([]byte, 128)//Allocate the memory
-	_, err := rand.Read(salt)//Populate with random
-	if err != nil {
-		log.Fatal(err)
-	}
-	//Append onto password
-	password = password + string(salt)
 	//Generate the hash
 	hashedpswd, err := bcrypt.GenerateFromPassword([]byte(password), 20)
 	if err != nil {
 		log.Fatal(err)
 	}
 	//Update the password in the database
-	stmt, err := database.Prepare("update passwords set password = ?, salt = ?, hash = ? where userID = ?")
+	stmt, err := database.Prepare("update passwords set password = ? where userID = ?")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer stmt.Close()
-	res, err := stmt.Exec(hashedpswd, string(salt), "bcrypt20", id) 
+	res, err := stmt.Exec(string(hashedpswd), id) 
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -186,12 +167,12 @@ func UpdatePassword (id uint, password string) {
 	}
 	if aff == 0 {
 		//Insert the password
-		stmt, err := database.Prepare("insert into passwords(userID, password, salt, hash) values (?,?,?,?)")
+		stmt, err := database.Prepare("insert into passwords(userID, password) values (?,?)")
 		if err != nil {
 			log.Fatal(err)
 		}
 		defer stmt.Close()
-		_, err = stmt.Exec(id, hashedpswd, string(salt), "bcrypt20")
+		_, err = stmt.Exec(id, string(hashedpswd))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -275,7 +256,7 @@ func Login (email string, password string) Token {
 	var token Token
 	return token
 }
-//Todo: Implement client certificate authentication (x509)
+
 func Logout (token Token) Token {
 	token.Expiry = time.Now().Unix()
 	//Update database
